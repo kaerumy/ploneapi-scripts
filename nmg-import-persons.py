@@ -5,13 +5,19 @@ import pycountry
 
 # Functions
 
+
 def search_person_by_name(name, session, base_url):
     # Searches for exact match of name (title)
     # If true, returns dict
 
+    # Workaround for bug
+    # https://github.com/plone/plone.restapi/issues/998
+    safename = name.replace('(', '')
+    safename = safename.replace(')', '')
+
     url = base_url + '/@search' + \
-          '?Title=' + urllib.parse.quote_plus(name) + \
-          '&portal_type%3Alist=Person'
+                     '?Title=' + urllib.parse.quote_plus(safename) + \
+                     '&portal_type%3Alist=Person'
 
     response = session.get(url)
 
@@ -21,11 +27,16 @@ def search_person_by_name(name, session, base_url):
 
         if response.json()['items'][0]['title'] == name:
             return response.json()['items'][0]
+
+        else:
+            return None
+
     except:
         pass
 
 
 # Setup authenticated session
+# https://plonerestapi.readthedocs.io/en/latest/authentication.html
 
 base_url = "http://localhost:8080/Plone3"
 
@@ -34,6 +45,9 @@ session.auth = ('', '')
 session.headers.update({'Accept': 'application/json'})
 
 # Import Dataframe
+# This script uses Pandas library to handle import of spreadsheet data,
+# including clean up operations
+# https://pandas.pydata.org/pandas-docs/stable/getting_started/index.html
 
 df = pandas.read_excel('source/kenya-companies.xlsx')
 
@@ -91,23 +105,18 @@ for index, person in persons_df.iterrows():
     # Check if person already exists
     if not search_person_by_name(pkg['name'], session, base_url):
         print(pkg['name'])
-        print(pkg['nationalities']
-        session.post('http://localhost:8080/Plone3/import', json=pkg)
+        response = session.post('http://localhost:8080/Plone3/persons', json=pkg)
 
-    #import contacts
-    # contact_pkg['@type'] = "Contact Detail"
-    # contact_pkg['label'] = "Director / Shareholder Address"
-    # contact_pkg['type'] = { 'title': "A postal address", 'token': "address" }
-    # contact_pkg['value']  = "PO Box"
+        #import contacts for persons
+        if response.status_code == 201 :
+            person_url = response.json()['@id']
 
+            if not pandas.isna(person['DIRECTOR/SHAREHOLDER ADDRESS']):
+                contact_pkg = {}
+                contact_pkg['@type'] = "Contact Detail"
+                contact_pkg['label'] = "Director / Shareholder Address"
+                contact_pkg['type'] = { 'title': "A postal address", 'token': "address" }
+                contact_pkg['value']  = person['DIRECTOR/SHAREHOLDER ADDRESS'].replace('\n','')
+                session.post(person_url, json=contact_pkg)
 
-
-# Import Company
-
-# Check if Company Exists
-    # If not then
-    # Name
-    # Description
-    # Date of registraiton
-
-
+            del response
